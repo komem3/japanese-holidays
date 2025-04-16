@@ -71,6 +71,7 @@
 
 (require 'cl-lib)
 (require 'holidays)
+(require 'url)
 (defvar displayed-month)
 (defvar displayed-year)
 
@@ -398,6 +399,37 @@ It can be face face, or list of faces for corresponding weekdays."
                japanese-holiday-weekend)
          (setq sunday (+ sunday 7))))
      (calendar-increment-month m y 1))))
+
+(defun japanese-holiday-load-holidays ()
+  "Download Japanese holidays bellow URL, and Overwrite `japanese-holidays`.
+https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv."
+  (let ((download-buffer (url-retrieve-synchronously "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv"))
+        (result nil)
+        (holidays nil))
+    (with-current-buffer download-buffer
+      ;; trim http response
+      (goto-char (point-min))
+      (re-search-forward "^$" nil 'move)
+      (forward-char)
+      (delete-region (point-min) (point))
+
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let* ((line (buffer-substring-no-properties
+                     (line-beginning-position) (line-end-position)))
+               (decode-line (decode-coding-string line 'sjis t))
+               (extract-line (substring (prin1-to-string decode-line) 3 (+ (length decode-line) 2))))
+          (when (not (string-match extract-line "国民の祝日・休日月日,国民の祝日・休日名称"))
+            (push (split-string extract-line ",") result))
+        (forward-line 1)))
+      (dolist (x result)
+        (let* ((date (split-string (car x) "/"))
+               (date (mapcar #'string-to-number date))
+              (name (cadr x)))
+          (setq holidays (append holidays `((holiday-sexp ',`(when (eq year ,(car date))
+                                                               ',`(,(nth 1 date) ,(nth 2 date) ,(nth 0 date))) ,name))))))
+      (setopt japanese-holidays holidays)
+    )))
 
 (provide 'japanese-holidays)
 ;;; japanese-holidays.el ends here
